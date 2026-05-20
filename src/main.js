@@ -132,15 +132,12 @@ async function scanProjects() {
 
 function renderProjects() {
   const grid = document.getElementById('project-grid');
-  const empty = document.getElementById('empty-state');
 
   if (projects.length === 0) {
-    empty.style.display = 'block';
-    empty.textContent = '未找到 Tauri 项目';
+    grid.innerHTML = '<div id="empty-state">未找到 Tauri 项目</div>';
     return;
   }
 
-  empty.style.display = 'none';
   grid.innerHTML = projects.map(p => renderProjectCard(p)).join('');
 }
 
