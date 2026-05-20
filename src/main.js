@@ -270,15 +270,22 @@ async function debugProject(projectPath, btn) {
   btn.innerHTML = '<span class="btn-spinner"></span>启动中…';
   btn.disabled = true;
   log(`正在启动调试模式: ${projectName}`, 'info');
+
+  const { listen } = window.__TAURI__.event;
+  const unlisten = await listen('build_output', (e) => log(e.payload, 'info'));
+
   try {
     const result = await invoke('icon_debug_project', { projectPath });
     log(result.output, result.success ? 'ok' : 'error');
+    if (!result.success) unlisten();
   } catch (e) {
     log(`启动调试失败: ${e}`, 'error');
+    unlisten();
   } finally {
     btn.innerHTML = origHtml;
     btn.disabled = false;
   }
+  // 调试进程长驻，unlisten 保持活跃以持续接收日志
 }
 
 // ── Build Project ──
