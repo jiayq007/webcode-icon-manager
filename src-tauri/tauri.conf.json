@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Icon Manager",
+  "version": "0.1.0",
+  "identifier": "com.jiayiqiu.webcode-icon-manager",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Tauri 图标管理器",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "titleBarStyle": "Transparent",
+        "hiddenTitle": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "WebClaw Tauri 图标管理工具",
+    "longDescription": "扫描 webcode 目录下的 Tauri 项目，管理项目图标，一键替换图标并清理编译缓存。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

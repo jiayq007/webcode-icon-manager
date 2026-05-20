@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tauri 图标管理器</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+
+  <header id="toolbar">
+    <span id="toolbar-title">Tauri 图标管理器</span>
+    <div id="dir-row">
+      <span id="current-dir" title="当前工作区"></span>
+      <button id="btn-change-dir" class="btn-ghost btn-sm" title="切换目录">📁</button>
+    </div>
+    <div id="toolbar-actions">
+      <button id="btn-scan" class="btn-primary">扫描项目</button>
+      <button id="btn-theme" class="btn-ghost btn-sm" title="切换主题"></button>
+      <button id="btn-settings" class="btn-ghost">⚙ 设置</button>
+    </div>
+  </header>
+
+  <main id="project-grid">
+    <div id="empty-state">点击 📁 按钮选择工作区目录，然后点击「扫描项目」</div>
+  </main>
+
+  <div id="log-panel">
+    <div id="log-header">
+      <span id="log-title">操作日志</span>
+      <div id="log-controls">
+        <button id="btn-log-toggle" class="btn-ghost btn-sm">收起</button>
+        <button id="btn-log-clear" class="btn-ghost btn-sm">清空</button>
+      </div>
+    </div>
+    <div id="log-output"></div>
+  </div>
+
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-box">
+      <h2>设置</h2>
+      <div class="form-group">
+        <label>工作区目录</label>
+        <input id="s-base-dir" type="text" placeholder="/home/xxx/智能体/webcode" />
+      </div>
+      <div class="modal-actions">
+        <button id="btn-settings-save" class="btn-primary">保存</button>
+        <button id="btn-settings-cancel" class="btn-ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="main.js"></script>
+</body>
+</html>
