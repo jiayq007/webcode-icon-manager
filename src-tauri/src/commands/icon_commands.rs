@@ -279,7 +279,10 @@ pub async fn icon_build_project(
 }
 
 #[tauri::command]
-pub async fn icon_debug_project(project_path: String) -> Result<IconOpResult, String> {
+pub async fn icon_debug_project(
+    project_path: String,
+    app_handle: tauri::AppHandle,
+) -> Result<IconOpResult, String> {
     let project_dir = Path::new(&project_path);
 
     if !project_dir.exists() {
@@ -290,19 +293,41 @@ pub async fn icon_debug_project(project_path: String) -> Result<IconOpResult, St
     }
 
     let dev_cmd = resolve_dev_command(project_dir);
+    let project_dir_buf = project_dir.to_path_buf();
 
-    Command::new("bash")
+    let mut child = TokioCommand::new("bash")
         .args(["-l", "-c", &dev_cmd])
-        .current_dir(project_dir)
+        .current_dir(&project_dir_buf)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("启动调试失败: {}", e))?;
 
+    let stdout = child.stdout.take().expect("no stdout");
+    let stderr = child.stderr.take().expect("no stderr");
+    let ah1 = app_handle.clone();
+    let ah2 = app_handle.clone();
+
+    // 长驻进程：在后台任务中持续流式推送日志，不阻塞命令返回
+    tokio::spawn(async move {
+        let mut lines = tokio::io::BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            ah1.emit("build_output", line).ok();
+        }
+    });
+    tokio::spawn(async move {
+        let mut lines = tokio::io::BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            ah2.emit("build_output", line).ok();
+        }
+    });
+    // child 移入后台，不等待退出
+    tokio::spawn(async move { child.wait().await });
+
     Ok(IconOpResult {
         success: true,
-        output: format!("已在后台启动调试模式（{}），首次 Rust 编译需约 1 分钟", dev_cmd),
+        output: format!("已启动调试模式（{}），日志实时输出中，首次 Rust 编译需约 1 分钟", dev_cmd),
     })
 }
 
