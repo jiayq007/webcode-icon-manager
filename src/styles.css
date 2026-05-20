@@ -301,6 +301,22 @@ button:disabled {
 
 .btn-action:hover:not(:disabled) { background: var(--bg-subtle-hover); }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.btn-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  vertical-align: -2px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
 /* ── Log Panel ── */
 #log-panel {
   height: var(--log-h);

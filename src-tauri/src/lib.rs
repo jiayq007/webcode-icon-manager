@@ -12,6 +12,8 @@ pub fn run() {
             icon_cargo_clean,
             icon_load_settings,
             icon_save_settings,
+            icon_build_project,
+            icon_debug_project,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

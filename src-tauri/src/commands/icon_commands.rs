@@ -3,6 +3,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::fs;
 use base64::Engine as _;
+use tokio::io::AsyncBufReadExt;
+use tokio::process::Command as TokioCommand;
+use std::process::Stdio;
+use tauri::Emitter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TauriProject {
@@ -210,6 +214,181 @@ pub async fn icon_replace_icon(project_path: String, icon_path: String) -> Resul
         success: output.status.success(),
         output: combined,
     })
+}
+
+#[tauri::command]
+pub async fn icon_build_project(
+    project_path: String,
+    app_handle: tauri::AppHandle,
+) -> Result<IconOpResult, String> {
+    let project_dir = Path::new(&project_path);
+
+    if !project_dir.exists() {
+        return Ok(IconOpResult {
+            success: false,
+            output: format!("项目目录不存在: {}", project_path),
+        });
+    }
+
+    let build_cmd = resolve_build_command(project_dir);
+    let mut child = TokioCommand::new("bash")
+        .args(["-l", "-c", &build_cmd])
+        .current_dir(project_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("启动构建失败: {}", e))?;
+
+    let stdout = child.stdout.take().expect("no stdout");
+    let stderr = child.stderr.take().expect("no stderr");
+    let ah1 = app_handle.clone();
+    let ah2 = app_handle.clone();
+
+    let t1 = tokio::spawn(async move {
+        let mut lines = tokio::io::BufReader::new(stdout).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            ah1.emit("build_output", line).ok();
+        }
+    });
+    let t2 = tokio::spawn(async move {
+        let mut lines = tokio::io::BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            ah2.emit("build_output", line).ok();
+        }
+    });
+
+    let status = child.wait().await.map_err(|e| format!("等待构建失败: {}", e))?;
+    let _ = tokio::join!(t1, t2);
+
+    if !status.success() {
+        return Ok(IconOpResult {
+            success: false,
+            output: "构建失败，请查看日志".to_string(),
+        });
+    }
+
+    let product_name = read_product_name(project_dir).unwrap_or_default();
+    let bundle_dir = project_dir.join("src-tauri/target/release/bundle");
+    let reveal_path = find_bundle_artifact(&bundle_dir, &product_name);
+    open_in_finder(&reveal_path);
+
+    Ok(IconOpResult {
+        success: true,
+        output: format!("构建成功，产物位于: {}", reveal_path.display()),
+    })
+}
+
+#[tauri::command]
+pub async fn icon_debug_project(project_path: String) -> Result<IconOpResult, String> {
+    let project_dir = Path::new(&project_path);
+
+    if !project_dir.exists() {
+        return Ok(IconOpResult {
+            success: false,
+            output: format!("项目目录不存在: {}", project_path),
+        });
+    }
+
+    let dev_cmd = resolve_dev_command(project_dir);
+
+    Command::new("bash")
+        .args(["-l", "-c", &dev_cmd])
+        .current_dir(project_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("启动调试失败: {}", e))?;
+
+    Ok(IconOpResult {
+        success: true,
+        output: format!("已在后台启动调试模式（{}），首次 Rust 编译需约 1 分钟", dev_cmd),
+    })
+}
+
+fn resolve_dev_command(project_dir: &Path) -> String {
+    let pkg_path = project_dir.join("package.json");
+    if let Ok(content) = fs::read_to_string(&pkg_path) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(scripts) = json["scripts"].as_object() {
+                if scripts.contains_key("dev") {
+                    return "npm run dev".to_string();
+                }
+                if scripts.contains_key("tauri:dev") {
+                    return "npm run tauri:dev".to_string();
+                }
+            }
+        }
+    }
+    "npx tauri dev".to_string()
+}
+
+fn resolve_build_command(project_dir: &Path) -> String {
+    let pkg_path = project_dir.join("package.json");
+    if let Ok(content) = fs::read_to_string(&pkg_path) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(scripts) = json["scripts"].as_object() {
+                if scripts.contains_key("build") {
+                    return "npm run build".to_string();
+                }
+                if scripts.contains_key("tauri:build") {
+                    return "npm run tauri:build".to_string();
+                }
+            }
+        }
+    }
+    "npx tauri build".to_string()
+}
+
+fn read_product_name(project_dir: &Path) -> Option<String> {
+    let conf = fs::read_to_string(project_dir.join("src-tauri/tauri.conf.json")).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&conf).ok()?;
+    json["productName"].as_str().map(|s| s.to_string())
+}
+
+fn find_bundle_artifact(bundle_dir: &Path, product_name: &str) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        if !product_name.is_empty() {
+            let app = bundle_dir.join("macos").join(format!("{}.app", product_name));
+            if app.exists() {
+                return app;
+            }
+        }
+        return bundle_dir.join("macos");
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let dir = bundle_dir.join("appimage");
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for e in entries.flatten() {
+                if e.path().extension().map_or(false, |x| x == "AppImage") {
+                    return e.path();
+                }
+            }
+        }
+        return dir;
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    bundle_dir.to_path_buf()
+}
+
+fn open_in_finder(path: &Path) {
+    #[cfg(target_os = "macos")]
+    {
+        if path.is_dir() && path.extension().map_or(true, |e| e != "app") {
+            Command::new("open").arg(path).spawn().ok();
+        } else {
+            Command::new("open").args(["-R", &path.to_string_lossy().to_string()]).spawn().ok();
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let target = if path.is_file() { path.parent().unwrap_or(path) } else { path };
+        Command::new("xdg-open").arg(target).spawn().ok();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    let _ = path;
 }
 
 #[tauri::command]

@@ -181,6 +181,12 @@ function renderProjectCard(project) {
         <button class="btn-action" onclick="cargoClean('${escapeHtml(path)}')">
           🧹 清理缓存
         </button>
+        <button class="btn-action" onclick="buildProject('${escapeHtml(path)}', this)">
+          📦 打包
+        </button>
+        <button class="btn-action" onclick="debugProject('${escapeHtml(path)}', this)">
+          🐛 调试
+        </button>
       </div>
     </div>
   `;
@@ -257,6 +263,53 @@ async function cargoClean(projectPath) {
   }
 }
 
+// ── Debug Project ──
+async function debugProject(projectPath, btn) {
+  const projectName = projectPath.split(/[\/\\]/).pop();
+  const origHtml = btn.innerHTML;
+  btn.innerHTML = '<span class="btn-spinner"></span>启动中…';
+  btn.disabled = true;
+  log(`正在启动调试模式: ${projectName}`, 'info');
+  try {
+    const result = await invoke('icon_debug_project', { projectPath });
+    log(result.output, result.success ? 'ok' : 'error');
+  } catch (e) {
+    log(`启动调试失败: ${e}`, 'error');
+  } finally {
+    btn.innerHTML = origHtml;
+    btn.disabled = false;
+  }
+}
+
+// ── Build Project ──
+async function buildProject(projectPath, btn) {
+  const projectName = projectPath.split(/[\/\\]/).pop();
+  if (!confirm(`确定要构建 ${projectName} 吗？\n\n将运行 npm run build，可能需要 5-15 分钟。`)) return;
+
+  log(`开始构建: ${projectName}`, 'info');
+  const origHtml = btn.innerHTML;
+  btn.innerHTML = '<span class="btn-spinner"></span>打包中…';
+  btn.disabled = true;
+
+  const card = document.querySelector(`.project-card[data-path="${projectPath}"]`);
+  if (card) card.classList.add('loading');
+
+  const { listen } = window.__TAURI__.event;
+  const unlisten = await listen('build_output', (e) => log(e.payload, 'info'));
+
+  try {
+    const result = await invoke('icon_build_project', { projectPath });
+    log(result.output, result.success ? 'ok' : 'error');
+  } catch (e) {
+    log(`构建出错: ${e}`, 'error');
+  } finally {
+    unlisten();
+    btn.innerHTML = origHtml;
+    btn.disabled = false;
+    if (card) card.classList.remove('loading');
+  }
+}
+
 // ── Modals ──
 function openModal(id) {
   document.getElementById(id).classList.remove('hidden');
@@ -315,3 +368,5 @@ window.scanProjects = scanProjects;
 window.replaceIcon = replaceIcon;
 window.cargoClean = cargoClean;
 window.selectDirectory = selectDirectory;
+window.buildProject = buildProject;
+window.debugProject = debugProject;
