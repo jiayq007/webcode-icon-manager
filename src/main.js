@@ -142,7 +142,7 @@ function renderProjects() {
 }
 
 function renderProjectCard(project) {
-  const { name, icon_data_url, description, version, path, icon_files } = project;
+  const { name, icon_data_url, description, version, path, tauri_dir, icon_files } = project;
 
   const iconFilesHtml = icon_files.map(f =>
     `<span class="icon-file-badge">${escapeHtml(f)}</span>`
@@ -175,10 +175,10 @@ function renderProjectCard(project) {
       </div>
 
       <div class="card-actions">
-        <button class="btn-action" onclick="replaceIcon('${escapeHtml(path)}')">
+        <button class="btn-action" onclick="replaceIcon('${escapeHtml(path)}', '${escapeHtml(tauri_dir)}')">
           🎨 更换图标
         </button>
-        <button class="btn-action" onclick="cargoClean('${escapeHtml(path)}')">
+        <button class="btn-action" onclick="cargoClean('${escapeHtml(path)}', '${escapeHtml(tauri_dir)}')">
           🧹 清理缓存
         </button>
         <button class="btn-action" onclick="buildProject('${escapeHtml(path)}', this)">
@@ -193,7 +193,7 @@ function renderProjectCard(project) {
 }
 
 // ── Replace Icon ──
-async function replaceIcon(projectPath) {
+async function replaceIcon(projectPath, tauriDir) {
   try {
     const selected = await open({
       multiple: false,
@@ -214,6 +214,7 @@ async function replaceIcon(projectPath) {
 
     const result = await invoke('icon_replace_icon', {
       projectPath,
+      tauriDir,
       iconPath: selected
     });
 
@@ -235,7 +236,7 @@ async function replaceIcon(projectPath) {
 }
 
 // ── Cargo Clean ──
-async function cargoClean(projectPath) {
+async function cargoClean(projectPath, tauriDir) {
   try {
     const projectName = projectPath.split(/[\/\\]/).pop();
     if (!confirm(`确定要清理 ${projectName} 的编译缓存吗？\n\n这将删除 target 目录，下次编译会重新生成。`)) {
@@ -246,7 +247,7 @@ async function cargoClean(projectPath) {
     const card = document.querySelector(`.project-card[data-path="${projectPath}"]`);
     if (card) card.classList.add('loading');
 
-    const result = await invoke('icon_cargo_clean', { projectPath });
+    const result = await invoke('icon_cargo_clean', { projectPath, tauriDir });
 
     if (result.success) {
       log(`缓存清理成功: ${projectPath}`, 'ok');
@@ -377,3 +378,4 @@ window.cargoClean = cargoClean;
 window.selectDirectory = selectDirectory;
 window.buildProject = buildProject;
 window.debugProject = debugProject;
+

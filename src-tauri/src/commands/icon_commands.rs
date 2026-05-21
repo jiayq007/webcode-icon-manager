@@ -12,6 +12,7 @@ use tauri::Emitter;
 pub struct TauriProject {
     pub name: String,
     pub path: String,
+    pub tauri_dir: String,
     pub icon_path: String,
     pub icon_data_url: String,
     pub description: String,
@@ -72,6 +73,29 @@ pub async fn icon_save_settings(settings: Settings) -> Result<(), String> {
         .map_err(|e| format!("保存配置失败: {}", e))
 }
 
+fn find_tauri_conf(project_dir: &Path) -> Option<PathBuf> {
+    let standard = project_dir.join("src-tauri/tauri.conf.json");
+    if standard.exists() {
+        return Some(standard);
+    }
+    // 非标准结构：最多扫两层子目录（如 crates/tauri-app/tauri.conf.json）
+    for l1 in fs::read_dir(project_dir).ok()?.flatten() {
+        let p1 = l1.path();
+        if !p1.is_dir() { continue; }
+        let c1 = p1.join("tauri.conf.json");
+        if c1.exists() { return Some(c1); }
+        if let Ok(entries) = fs::read_dir(&p1) {
+            for l2 in entries.flatten() {
+                let p2 = l2.path();
+                if !p2.is_dir() { continue; }
+                let c2 = p2.join("tauri.conf.json");
+                if c2.exists() { return Some(c2); }
+            }
+        }
+    }
+    None
+}
+
 fn icon_to_data_url(path: &Path) -> String {
     match fs::read(path) {
         Ok(bytes) => {
@@ -117,11 +141,12 @@ pub async fn icon_scan_projects(base_dir: String) -> Result<Vec<TauriProject>, S
             continue;
         }
 
-        let tauri_conf = path.join("src-tauri/tauri.conf.json");
-        let icons_dir = path.join("src-tauri/icons");
+        let Some(tauri_conf) = find_tauri_conf(&path) else { continue };
+        let tauri_dir = tauri_conf.parent().unwrap().to_path_buf();
+        let icons_dir = tauri_dir.join("icons");
         let icon_path = icons_dir.join("icon.png");
 
-        if !tauri_conf.exists() || !icon_path.exists() {
+        if !icon_path.exists() {
             continue;
         }
 
@@ -160,6 +185,7 @@ pub async fn icon_scan_projects(base_dir: String) -> Result<Vec<TauriProject>, S
         projects.push(TauriProject {
             name,
             path: path.to_string_lossy().to_string(),
+            tauri_dir: tauri_dir.to_string_lossy().to_string(),
             icon_path: icon_path.to_string_lossy().to_string(),
             icon_data_url,
             description,
@@ -173,11 +199,11 @@ pub async fn icon_scan_projects(base_dir: String) -> Result<Vec<TauriProject>, S
 }
 
 #[tauri::command]
-pub async fn icon_replace_icon(project_path: String, icon_path: String) -> Result<IconOpResult, String> {
-    let project_dir = Path::new(&project_path);
+pub async fn icon_replace_icon(project_path: String, tauri_dir: String, icon_path: String) -> Result<IconOpResult, String> {
+    let tauri_path = Path::new(&tauri_dir);
     let icon_file = Path::new(&icon_path);
 
-    if !project_dir.exists() {
+    if !tauri_path.exists() {
         return Ok(IconOpResult {
             success: false,
             output: format!("项目目录不存在: {}", project_path),
@@ -193,7 +219,7 @@ pub async fn icon_replace_icon(project_path: String, icon_path: String) -> Resul
 
     let output = Command::new("npx")
         .args(["tauri", "icon", &icon_path])
-        .current_dir(project_dir)
+        .current_dir(tauri_path)
         .output()
         .map_err(|e| format!("执行命令失败: {}", e))?;
 
@@ -230,9 +256,10 @@ pub async fn icon_build_project(
         });
     }
 
-    let build_cmd = resolve_build_command(project_dir);
-    let mut child = TokioCommand::new("bash")
-        .args(["-l", "-c", &build_cmd])
+    let build_cmd = with_nvm(&resolve_build_command(project_dir));
+    let shell = user_shell();
+    let mut child = TokioCommand::new(&shell)
+        .args(["-c", &build_cmd])
         .current_dir(project_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -292,11 +319,27 @@ pub async fn icon_debug_project(
         });
     }
 
-    let dev_cmd = resolve_dev_command(project_dir);
-    let project_dir_buf = project_dir.to_path_buf();
+    let raw_cmd = resolve_dev_command(project_dir);
 
-    let mut child = TokioCommand::new("bash")
-        .args(["-l", "-c", &dev_cmd])
+    // 如果选中了 tauri:dev，预检 cargo tauri 是否可用
+    if raw_cmd.contains("tauri:dev") {
+        let check = Command::new("cargo").args(["tauri", "--version"]).output();
+        if check.map(|o| !o.status.success()).unwrap_or(true) {
+            return Ok(IconOpResult {
+                success: false,
+                output: "❌ cargo tauri 未安装，请先运行：cargo install tauri-cli --version \"^2.0.0\"".to_string(),
+            });
+        }
+        // cargo tauri dev 内部用 PTY 管理子进程，pipe 捕获不到输出，改用新 Terminal 窗口运行
+        return launch_in_terminal(project_path, raw_cmd);
+    }
+
+    let dev_cmd = with_nvm(&raw_cmd);
+    let project_dir_buf = project_dir.to_path_buf();
+    let shell = user_shell();
+
+    let mut child = TokioCommand::new(&shell)
+        .args(["-c", &dev_cmd])
         .current_dir(&project_dir_buf)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -331,16 +374,78 @@ pub async fn icon_debug_project(
     })
 }
 
+fn user_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
+}
+
+fn with_nvm(cmd: &str) -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
+
+    // 扫描所有 nvm node 版本，找含 pnpm 的 bin 目录直接注入 PATH（版本号降序，较新的优先）
+    let mut extra_paths: Vec<(String, String)> = vec![];
+    let nvm_node_dir = PathBuf::from(&home).join(".nvm/versions/node");
+    if let Ok(versions) = fs::read_dir(&nvm_node_dir) {
+        for v in versions.flatten() {
+            let ver_name = v.file_name().to_string_lossy().to_string();
+            let bin = v.path().join("bin");
+            if bin.join("pnpm").exists() {
+                extra_paths.push((ver_name, bin.to_string_lossy().to_string()));
+            }
+        }
+    }
+    extra_paths.sort_by(|a, b| b.0.cmp(&a.0)); // 版本号字符串降序（v22 > v20 > v16）
+    let extra_paths: Vec<String> = extra_paths.into_iter().map(|(_, p)| p).collect();
+
+    if !extra_paths.is_empty() {
+        let inject = extra_paths.join(":");
+        format!(r#"export PATH="{inject}:$PATH"; {cmd}"#)
+    } else {
+        // fallback：source nvm（单独两行，无 || 优先级问题）
+        format!(
+            r#"[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && . "/opt/homebrew/opt/nvm/nvm.sh"; \
+[ -s "{home}/.nvm/nvm.sh" ] && . "{home}/.nvm/nvm.sh"; \
+{cmd}"#
+        )
+    }
+}
+
+fn launch_in_terminal(project_path: String, raw_cmd: String) -> Result<IconOpResult, String> {
+    let full_cmd = with_nvm(&raw_cmd);
+    let shell = user_shell();
+
+    // 写临时脚本文件，避免 osascript 字符串里的引号冲突
+    // -il: interactive + login，确保 .zshrc/.bash_profile 加载，cargo/nvm 都在 PATH
+    let tmp = format!("/tmp/webcode-debug-{}.sh", std::process::id());
+    fs::write(&tmp, format!(
+        "#!{shell} -il\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\ncd '{project_path}' || {{ echo \"cd 失败: {project_path}\"; exec {shell}; }}\necho \"=== 执行: {full_cmd} ===\"\n{full_cmd}\necho \"=== 退出码: $? ===\"\nexec {shell}\n"
+    )).map_err(|e| format!("写临时脚本失败: {}", e))?;
+    Command::new("chmod").args(["+x", &tmp]).output().ok();
+
+    let apple_script = format!(
+        "tell application \"Terminal\"\ndo script \"{tmp}\"\nactivate\nend tell"
+    );
+    Command::new("osascript")
+        .args(["-e", &apple_script])
+        .spawn()
+        .map_err(|e| format!("打开终端失败: {}", e))?;
+
+    Ok(IconOpResult {
+        success: true,
+        output: format!("已在新 Terminal 窗口启动（{raw_cmd}），请查看弹出的 Terminal"),
+    })
+}
+
 fn resolve_dev_command(project_dir: &Path) -> String {
     let pkg_path = project_dir.join("package.json");
     if let Ok(content) = fs::read_to_string(&pkg_path) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(scripts) = json["scripts"].as_object() {
-                if scripts.contains_key("dev") {
-                    return "npm run dev".to_string();
-                }
+                // tauri:dev 优先（明确的桌面启动命令），再回退到 dev
                 if scripts.contains_key("tauri:dev") {
                     return "npm run tauri:dev".to_string();
+                }
+                if scripts.contains_key("dev") {
+                    return "npm run dev".to_string();
                 }
             }
         }
@@ -353,11 +458,11 @@ fn resolve_build_command(project_dir: &Path) -> String {
     if let Ok(content) = fs::read_to_string(&pkg_path) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(scripts) = json["scripts"].as_object() {
-                if scripts.contains_key("build") {
-                    return "npm run build".to_string();
-                }
                 if scripts.contains_key("tauri:build") {
                     return "npm run tauri:build".to_string();
+                }
+                if scripts.contains_key("build") {
+                    return "npm run build".to_string();
                 }
             }
         }
@@ -417,27 +522,19 @@ fn open_in_finder(path: &Path) {
 }
 
 #[tauri::command]
-pub async fn icon_cargo_clean(project_path: String) -> Result<IconOpResult, String> {
-    let project_dir = Path::new(&project_path);
+pub async fn icon_cargo_clean(_project_path: String, tauri_dir: String) -> Result<IconOpResult, String> {
+    let tauri_path = Path::new(&tauri_dir);
 
-    if !project_dir.exists() {
+    if !tauri_path.exists() {
         return Ok(IconOpResult {
             success: false,
-            output: format!("项目目录不存在: {}", project_path),
-        });
-    }
-
-    let tauri_dir = project_dir.join("src-tauri");
-    if !tauri_dir.exists() {
-        return Ok(IconOpResult {
-            success: false,
-            output: format!("src-tauri 目录不存在: {}", tauri_dir.display()),
+            output: format!("目录不存在: {}", tauri_dir),
         });
     }
 
     let output = Command::new("cargo")
         .arg("clean")
-        .current_dir(&tauri_dir)
+        .current_dir(tauri_path)
         .output()
         .map_err(|e| format!("执行命令失败: {}", e))?;
 
