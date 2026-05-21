@@ -217,9 +217,11 @@ pub async fn icon_replace_icon(project_path: String, tauri_dir: String, icon_pat
         });
     }
 
+    // 必须从项目根目录运行，@tauri-apps/cli 在根目录 node_modules 中
+    let project_root = Path::new(&project_path);
     let output = Command::new("npx")
         .args(["tauri", "icon", &icon_path])
-        .current_dir(tauri_path)
+        .current_dir(project_root)
         .output()
         .map_err(|e| format!("执行命令失败: {}", e))?;
 
