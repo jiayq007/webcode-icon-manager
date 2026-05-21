@@ -1,12 +1,12 @@
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::fs;
-use base64::Engine as _;
-use tokio::io::AsyncBufReadExt;
-use tokio::process::Command as TokioCommand;
 use std::process::Stdio;
 use tauri::Emitter;
+use tokio::io::AsyncBufReadExt;
+use tokio::process::Command as TokioCommand;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TauriProject {
@@ -66,8 +66,8 @@ pub async fn icon_save_settings(settings: Settings) -> Result<(), String> {
             .await
             .map_err(|e| format!("创建配置目录失败: {}", e))?;
     }
-    let json = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("序列化配置失败: {}", e))?;
+    let json =
+        serde_json::to_string_pretty(&settings).map_err(|e| format!("序列化配置失败: {}", e))?;
     tokio::fs::write(&path, json)
         .await
         .map_err(|e| format!("保存配置失败: {}", e))
@@ -81,15 +81,23 @@ fn find_tauri_conf(project_dir: &Path) -> Option<PathBuf> {
     // 非标准结构：最多扫两层子目录（如 crates/tauri-app/tauri.conf.json）
     for l1 in fs::read_dir(project_dir).ok()?.flatten() {
         let p1 = l1.path();
-        if !p1.is_dir() { continue; }
+        if !p1.is_dir() {
+            continue;
+        }
         let c1 = p1.join("tauri.conf.json");
-        if c1.exists() { return Some(c1); }
+        if c1.exists() {
+            return Some(c1);
+        }
         if let Ok(entries) = fs::read_dir(&p1) {
             for l2 in entries.flatten() {
                 let p2 = l2.path();
-                if !p2.is_dir() { continue; }
+                if !p2.is_dir() {
+                    continue;
+                }
                 let c2 = p2.join("tauri.conf.json");
-                if c2.exists() { return Some(c2); }
+                if c2.exists() {
+                    return Some(c2);
+                }
             }
         }
     }
@@ -130,8 +138,7 @@ pub async fn icon_scan_projects(base_dir: String) -> Result<Vec<TauriProject>, S
 
     let mut projects = Vec::new();
 
-    let entries = fs::read_dir(base_path)
-        .map_err(|e| format!("读取目录失败: {}", e))?;
+    let entries = fs::read_dir(base_path).map_err(|e| format!("读取目录失败: {}", e))?;
 
     for entry in entries {
         let entry = entry.map_err(|e| format!("读取条目失败: {}", e))?;
@@ -141,7 +148,9 @@ pub async fn icon_scan_projects(base_dir: String) -> Result<Vec<TauriProject>, S
             continue;
         }
 
-        let Some(tauri_conf) = find_tauri_conf(&path) else { continue };
+        let Some(tauri_conf) = find_tauri_conf(&path) else {
+            continue;
+        };
         let tauri_dir = tauri_conf.parent().unwrap().to_path_buf();
         let icons_dir = tauri_dir.join("icons");
         let icon_path = icons_dir.join("icon.png");
@@ -150,7 +159,8 @@ pub async fn icon_scan_projects(base_dir: String) -> Result<Vec<TauriProject>, S
             continue;
         }
 
-        let name = path.file_name()
+        let name = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("Unknown")
             .to_string();
@@ -199,7 +209,11 @@ pub async fn icon_scan_projects(base_dir: String) -> Result<Vec<TauriProject>, S
 }
 
 #[tauri::command]
-pub async fn icon_replace_icon(project_path: String, tauri_dir: String, icon_path: String) -> Result<IconOpResult, String> {
+pub async fn icon_replace_icon(
+    project_path: String,
+    tauri_dir: String,
+    icon_path: String,
+) -> Result<IconOpResult, String> {
     let tauri_path = Path::new(&tauri_dir);
     let icon_file = Path::new(&icon_path);
 
@@ -297,7 +311,10 @@ pub async fn icon_build_project(
         }
     });
 
-    let status = child.wait().await.map_err(|e| format!("等待构建失败: {}", e))?;
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("等待构建失败: {}", e))?;
     let _ = tokio::join!(t1, t2);
 
     if !status.success() {
@@ -334,15 +351,8 @@ pub async fn icon_debug_project(
 
     let raw_cmd = resolve_dev_command(project_dir);
 
-    // 如果选中了 tauri:dev，预检 cargo tauri 是否可用
-    if raw_cmd.contains("tauri:dev") {
-        let check = Command::new("cargo").args(["tauri", "--version"]).output();
-        if check.map(|o| !o.status.success()).unwrap_or(true) {
-            return Ok(IconOpResult {
-                success: false,
-                output: "❌ cargo tauri 未安装，请先运行：cargo install tauri-cli --version \"^2.0.0\"".to_string(),
-            });
-        }
+    // Tauri dev 会启动桌面壳并持有前端进程，使用独立 Terminal 更稳。
+    if is_tauri_dev_command(&raw_cmd) {
         // cargo tauri dev 内部用 PTY 管理子进程，pipe 捕获不到输出，改用新 Terminal 窗口运行
         return launch_in_terminal(project_path, raw_cmd);
     }
@@ -383,7 +393,10 @@ pub async fn icon_debug_project(
 
     Ok(IconOpResult {
         success: true,
-        output: format!("已启动调试模式（{}），日志实时输出中，首次 Rust 编译需约 1 分钟", dev_cmd),
+        output: format!(
+            "已启动调试模式（{}），日志实时输出中，首次 Rust 编译需约 1 分钟",
+            dev_cmd
+        ),
     })
 }
 
@@ -425,18 +438,27 @@ fn with_nvm(cmd: &str) -> String {
 fn launch_in_terminal(project_path: String, raw_cmd: String) -> Result<IconOpResult, String> {
     let full_cmd = with_nvm(&raw_cmd);
     let shell = user_shell();
+    let preflight = if is_tauri_dev_command(&raw_cmd) {
+        r#"
+if [ -f package.json ] && grep -q '"@tauri-apps/cli"' package.json && [ ! -x node_modules/.bin/tauri ]; then
+  echo "=== 未找到 node_modules/.bin/tauri，正在执行 npm install ==="
+  npm install || exit $?
+fi
+"#
+    } else {
+        ""
+    };
 
     // 写临时脚本文件，避免 osascript 字符串里的引号冲突
     // -il: interactive + login，确保 .zshrc/.bash_profile 加载，cargo/nvm 都在 PATH
     let tmp = format!("/tmp/webcode-debug-{}.sh", std::process::id());
     fs::write(&tmp, format!(
-        "#!{shell} -il\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\ncd '{project_path}' || {{ echo \"cd 失败: {project_path}\"; exec {shell}; }}\necho \"=== 执行: {full_cmd} ===\"\n{full_cmd}\necho \"=== 退出码: $? ===\"\nexec {shell}\n"
+        "#!{shell} -il\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\ncd '{project_path}' || {{ echo \"cd 失败: {project_path}\"; exec {shell}; }}\n{preflight}echo \"=== 执行: {full_cmd} ===\"\n{full_cmd}\necho \"=== 退出码: $? ===\"\nexec {shell}\n"
     )).map_err(|e| format!("写临时脚本失败: {}", e))?;
     Command::new("chmod").args(["+x", &tmp]).output().ok();
 
-    let apple_script = format!(
-        "tell application \"Terminal\"\ndo script \"{tmp}\"\nactivate\nend tell"
-    );
+    let apple_script =
+        format!("tell application \"Terminal\"\ndo script \"{tmp}\"\nactivate\nend tell");
     Command::new("osascript")
         .args(["-e", &apple_script])
         .spawn()
@@ -453,9 +475,15 @@ fn resolve_dev_command(project_dir: &Path) -> String {
     if let Ok(content) = fs::read_to_string(&pkg_path) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(scripts) = json["scripts"].as_object() {
-                // tauri:dev 优先（明确的桌面启动命令），再回退到 dev
+                // 明确的桌面启动命令优先；纯 Vite 的 dev 只能作为最后回退。
                 if scripts.contains_key("tauri:dev") {
                     return "npm run tauri:dev".to_string();
+                }
+                if scripts.contains_key("tauri") {
+                    return "npm run tauri -- dev".to_string();
+                }
+                if script_contains_tauri_dev(scripts.get("dev")) {
+                    return "npm run dev".to_string();
                 }
                 if scripts.contains_key("dev") {
                     return "npm run dev".to_string();
@@ -466,6 +494,21 @@ fn resolve_dev_command(project_dir: &Path) -> String {
     "npx tauri dev".to_string()
 }
 
+fn is_tauri_dev_command(cmd: &str) -> bool {
+    cmd.contains("tauri:dev")
+        || cmd.contains("tauri dev")
+        || cmd.contains("tauri -- dev")
+        || cmd.contains("cargo tauri dev")
+        || cmd.contains("pnpm tauri dev")
+}
+
+fn script_contains_tauri_dev(script: Option<&serde_json::Value>) -> bool {
+    script
+        .and_then(|value| value.as_str())
+        .map(is_tauri_dev_command)
+        .unwrap_or(false)
+}
+
 fn resolve_build_command(project_dir: &Path) -> String {
     let pkg_path = project_dir.join("package.json");
     if let Ok(content) = fs::read_to_string(&pkg_path) {
@@ -473,6 +516,9 @@ fn resolve_build_command(project_dir: &Path) -> String {
             if let Some(scripts) = json["scripts"].as_object() {
                 if scripts.contains_key("tauri:build") {
                     return "npm run tauri:build".to_string();
+                }
+                if scripts.contains_key("tauri") {
+                    return "npm run tauri -- build".to_string();
                 }
                 if scripts.contains_key("build") {
                     return "npm run build".to_string();
@@ -493,7 +539,9 @@ fn find_bundle_artifact(bundle_dir: &Path, product_name: &str) -> PathBuf {
     #[cfg(target_os = "macos")]
     {
         if !product_name.is_empty() {
-            let app = bundle_dir.join("macos").join(format!("{}.app", product_name));
+            let app = bundle_dir
+                .join("macos")
+                .join(format!("{}.app", product_name));
             if app.exists() {
                 return app;
             }
@@ -522,12 +570,19 @@ fn open_in_finder(path: &Path) {
         if path.is_dir() && path.extension().map_or(true, |e| e != "app") {
             Command::new("open").arg(path).spawn().ok();
         } else {
-            Command::new("open").args(["-R", &path.to_string_lossy().to_string()]).spawn().ok();
+            Command::new("open")
+                .args(["-R", &path.to_string_lossy().to_string()])
+                .spawn()
+                .ok();
         }
     }
     #[cfg(target_os = "linux")]
     {
-        let target = if path.is_file() { path.parent().unwrap_or(path) } else { path };
+        let target = if path.is_file() {
+            path.parent().unwrap_or(path)
+        } else {
+            path
+        };
         Command::new("xdg-open").arg(target).spawn().ok();
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
@@ -535,7 +590,10 @@ fn open_in_finder(path: &Path) {
 }
 
 #[tauri::command]
-pub async fn icon_cargo_clean(_project_path: String, tauri_dir: String) -> Result<IconOpResult, String> {
+pub async fn icon_cargo_clean(
+    _project_path: String,
+    tauri_dir: String,
+) -> Result<IconOpResult, String> {
     let tauri_path = Path::new(&tauri_dir);
 
     if !tauri_path.exists() {
