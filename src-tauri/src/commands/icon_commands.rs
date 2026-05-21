@@ -217,13 +217,24 @@ pub async fn icon_replace_icon(project_path: String, tauri_dir: String, icon_pat
         });
     }
 
-    // 必须从项目根目录运行，@tauri-apps/cli 在根目录 node_modules 中
     let project_root = Path::new(&project_path);
-    let output = Command::new("npx")
-        .args(["tauri", "icon", &icon_path])
-        .current_dir(project_root)
-        .output()
-        .map_err(|e| format!("执行命令失败: {}", e))?;
+
+    // 优先使用项目本地的 CLI；若无则降级到 cargo tauri icon
+    let local_bin = project_root.join("node_modules/.bin/tauri");
+    let output = if local_bin.exists() {
+        Command::new(&local_bin)
+            .args(["icon", &icon_path])
+            .current_dir(project_root)
+            .output()
+            .map_err(|e| format!("执行命令失败: {}", e))?
+    } else {
+        // ai-kanban 等使用 cargo tauri，从 src-tauri 目录运行
+        Command::new("cargo")
+            .args(["tauri", "icon", &icon_path])
+            .current_dir(tauri_path)
+            .output()
+            .map_err(|e| format!("执行命令失败: {}", e))?
+    };
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
