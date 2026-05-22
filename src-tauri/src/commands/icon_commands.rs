@@ -151,7 +151,9 @@ pub async fn icon_scan_projects(base_dir: String) -> Result<Vec<TauriProject>, S
         let Some(tauri_conf) = find_tauri_conf(&path) else {
             continue;
         };
-        let tauri_dir = tauri_conf.parent().unwrap().to_path_buf();
+        let Some(tauri_dir) = tauri_conf.parent().map(|p| p.to_path_buf()) else {
+            continue; // Skip if tauri.conf has no parent directory
+        };
         let icons_dir = tauri_dir.join("icons");
         let icon_path = icons_dir.join("icon.png");
 
@@ -293,8 +295,14 @@ pub async fn icon_build_project(
         .spawn()
         .map_err(|e| format!("启动构建失败: {}", e))?;
 
-    let stdout = child.stdout.take().expect("no stdout");
-    let stderr = child.stderr.take().expect("no stderr");
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "无法捕获 stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "无法捕获 stderr".to_string())?;
     let ah1 = app_handle.clone();
     let ah2 = app_handle.clone();
 
@@ -370,8 +378,14 @@ pub async fn icon_debug_project(
         .spawn()
         .map_err(|e| format!("启动调试失败: {}", e))?;
 
-    let stdout = child.stdout.take().expect("no stdout");
-    let stderr = child.stderr.take().expect("no stderr");
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "无法捕获 stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "无法捕获 stderr".to_string())?;
     let ah1 = app_handle.clone();
     let ah2 = app_handle.clone();
 
