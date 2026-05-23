@@ -3,12 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tauri 图标管理器</title>
+  <title>Tauri Icon Manager</title>
   <link rel="stylesheet" href="styles.css" />
-  <!-- React 18 + ReactDOM + Babel for JSX transformation -->
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- React 18 + ReactDOM + Babel for JSX transformation (本地文件) -->
+  <script src="vendor/react.development.js"></script>
+  <script src="vendor/react-dom.development.js"></script>
+  <script src="vendor/babel.min.js"></script>
+  <!-- i18n -->
+  <script src="i18n.js"></script>
+  <script>
+    // Set dynamic page title based on current language
+    (function() {
+      var title = window.i18n.t('pageTitle');
+      if (title) document.title = title;
+    })();
+    window.addEventListener('i18n-change', function() {
+      document.title = window.i18n.t('pageTitle');
+    });
+  </script>
 </head>
 <body>
 <div id="root"></div>

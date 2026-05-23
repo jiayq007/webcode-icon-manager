@@ -1,5 +1,31 @@
 const { useState, useEffect, useMemo, useRef } = React;
 
+// ── i18n Hook ──
+function useI18n() {
+  const [lang, setLang] = useState(() => window.i18n.getLang());
+
+  useEffect(() => {
+    const handler = (e) => setLang(e.detail);
+    window.addEventListener('i18n-change', handler);
+    return () => window.removeEventListener('i18n-change', handler);
+  }, []);
+
+  const t = React.useCallback((key, ...args) => {
+    let text = window.i18n.t(key);
+    args.forEach((arg, i) => {
+      text = text.replace(`{${i}}`, arg);
+    });
+    return text;
+  }, []);
+
+  const toggleLang = React.useCallback(() => {
+    const newLang = lang === 'zh' ? 'en' : 'zh';
+    window.i18n.setLang(newLang);
+  }, [lang]);
+
+  return { lang, t, toggleLang };
+}
+
 // ── Icons (SVG) ──
 const Icons = {
   scan: (
@@ -90,7 +116,7 @@ function useTweaks(defaults) {
 
 // ── Utility Functions ──
 function shortPath(p) {
-  if (!p) return "未设置目录";
+  if (!p) return window.i18n.t('dirNotSet');
   const home = String(p).match(/^\/home\/[^/]+/)?.[0] || String(p).match(/^\/Users\/[^/]+/)?.[0] || "";
   return home ? "~" + p.slice(home.length) : p;
 }
@@ -107,22 +133,27 @@ function escapeHtml(str) {
 
 // ── Theme Toggle ──
 const COLOR_MODE_CYCLE = { system: "dark", dark: "light", light: "system" };
-const COLOR_MODE_META = {
-  system: { icon: "auto", title: "跟随系统（点击切换暗色）" },
-  dark: { icon: "moon", title: "暗色模式（点击切换亮色）" },
-  light: { icon: "sun", title: "亮色模式（点击跟随系统）" },
+const COLOR_MODE_META_KEYS = {
+  system: { icon: "auto", titleKey: "themeSystemDesc" },
+  dark: { icon: "moon", titleKey: "themeDarkDesc" },
+  light: { icon: "sun", titleKey: "themeLightDesc" },
 };
 
 // ── TopBar Component ──
-function TopBar({ path, scanning, onScan, onSettings, onCycleColorMode, colorMode }) {
-  const meta = COLOR_MODE_META[colorMode] || COLOR_MODE_META.system;
+function TopBar({ path, scanning, onScan, onSettings, onCycleColorMode, colorMode, t, lang, onToggleLang }) {
+  const meta = COLOR_MODE_META_KEYS[colorMode] || COLOR_MODE_META_KEYS.system;
+  const langMeta = {
+    zh: { label: "EN", title: t('langToggleToEn') },
+    en: { label: "中", title: t('langToggleToZh') },
+  };
+
   return (
     <header className="topbar">
       <div className="tb-left">
         <div className="logo">🎨</div>
         <div className="tb-title">
-          <div className="tb-t1">Icon Manager</div>
-          <div className="tb-t2">Tauri 项目图标管理</div>
+          <div className="tb-t1">{t('appTitle')}</div>
+          <div className="tb-t2">{t('appSubtitle')}</div>
         </div>
         <div className="tb-divider" />
         <button className="path-pick" onClick={onSettings}>
@@ -131,16 +162,19 @@ function TopBar({ path, scanning, onScan, onSettings, onCycleColorMode, colorMod
         </button>
       </div>
       <div className="tb-right">
-        <button className="ibtn" title={meta.title} onClick={onCycleColorMode}>
+        <button className="ibtn lang-btn" title={langMeta[lang]?.title} onClick={onToggleLang}>
+          {langMeta[lang]?.label || lang}
+        </button>
+        <button className="ibtn" title={t(meta.titleKey)} onClick={onCycleColorMode}>
           {meta.icon === "sun" ? Icons.sun : meta.icon === "moon" ? Icons.moon : Icons.auto}
         </button>
         <button className="btn btn-ghost" onClick={onSettings}>
           {Icons.cog}
-          <span>设置</span>
+          <span>{t('settings')}</span>
         </button>
         <button className="btn btn-primary" onClick={onScan} disabled={scanning}>
           {Icons.scan}
-          <span>{scanning ? "扫描中" : "扫描项目"}</span>
+          <span>{scanning ? t('scanning') : t('scanProjects')}</span>
         </button>
       </div>
     </header>
@@ -148,7 +182,7 @@ function TopBar({ path, scanning, onScan, onSettings, onCycleColorMode, colorMod
 }
 
 // ── ProjectCard Component ──
-function ProjectCard({ project, loading, onReplaceIcon, onCargoClean, onBuild, onDebug }) {
+function ProjectCard({ project, loading, onReplaceIcon, onCargoClean, onBuild, onDebug, t }) {
   return (
     <div className={`project-card ${loading ? "loading" : ""}`}>
       <div className="card-header">
@@ -159,7 +193,7 @@ function ProjectCard({ project, loading, onReplaceIcon, onCargoClean, onBuild, o
             <span className="version-badge">{escapeHtml(project.version)}</span>
           </div>
           <div className="project-description" title={escapeHtml(project.description)}>
-            {escapeHtml(project.description || "无描述")}
+            {escapeHtml(project.description || t('noDescription'))}
           </div>
           <div className="project-path" title={escapeHtml(project.path)}>
             {escapeHtml(shortPath(project.path))}
@@ -169,7 +203,7 @@ function ProjectCard({ project, loading, onReplaceIcon, onCargoClean, onBuild, o
 
       <div className="card-details">
         <div className="detail-row">
-          <span className="detail-label">图标文件 ({project.iconFiles.length})</span>
+          <span className="detail-label">{t('iconFilesWithCount', project.iconFiles.length)}</span>
         </div>
         <div className="icon-files-list">
           {project.iconFiles.map((f, i) => (
@@ -186,28 +220,28 @@ function ProjectCard({ project, loading, onReplaceIcon, onCargoClean, onBuild, o
           onClick={() => onReplaceIcon(project)}
           disabled={loading}
         >
-          🎨 更换图标
+          🎨 {t('replaceIcon')}
         </button>
         <button
           className="btn-action"
           onClick={() => onCargoClean(project)}
           disabled={loading}
         >
-          🧹 清理缓存
+          🧹 {t('cleanCache')}
         </button>
         <button
           className="btn-action"
           onClick={() => onBuild(project)}
           disabled={loading}
         >
-          📦 打包
+          📦 {t('build')}
         </button>
         <button
           className="btn-action"
           onClick={() => onDebug(project)}
           disabled={loading}
         >
-          🐛 调试
+          🐛 {t('debug')}
         </button>
       </div>
     </div>
@@ -215,9 +249,9 @@ function ProjectCard({ project, loading, onReplaceIcon, onCargoClean, onBuild, o
 }
 
 // ── LogPanel Component ──
-function LogPanel({ entries, open, setOpen, onClear }) {
-  const last = entries[entries.length - 1] || { level: "info", t: "--:--:--", msg: "等待操作" };
-  const [copyLabel, setCopyLabel] = useState("拷贝");
+function LogPanel({ entries, open, setOpen, onClear, t }) {
+  const last = entries[entries.length - 1] || { level: "info", t: "--:--:--", msg: t('waiting') };
+  const [copied, setCopied] = useState(false);
 
   const handleCopy = async (e) => {
     e.stopPropagation();
@@ -229,8 +263,8 @@ function LogPanel({ entries, open, setOpen, onClear }) {
 
     try {
       await navigator.clipboard.writeText(text);
-      setCopyLabel("已复制!");
-      setTimeout(() => setCopyLabel("拷贝"), 2000);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       // Fallback for older browsers
       const textarea = document.createElement("textarea");
@@ -241,10 +275,10 @@ function LogPanel({ entries, open, setOpen, onClear }) {
       textarea.select();
       try {
         document.execCommand("copy");
-        setCopyLabel("已复制!");
-        setTimeout(() => setCopyLabel("拷贝"), 2000);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
       } catch (err) {
-        console.error("拷贝失败:", err);
+        console.error(t('copyFail'), err);
       }
       document.body.removeChild(textarea);
     }
@@ -253,8 +287,8 @@ function LogPanel({ entries, open, setOpen, onClear }) {
   return (
     <div className={`log ${open ? "log-open" : ""}`}>
       <div className="log-hd" onClick={() => setOpen(!open)}>
-        <span className="log-title">操作日志</span>
-        <span className="log-count">{entries.length} 条</span>
+        <span className="log-title">{t('operationLog')}</span>
+        <span className="log-count">{entries.length} {t('logCount')}</span>
         <div className="log-recent">
           {!open && (
             <span className={`log-last log-${last.level}`}>
@@ -272,14 +306,14 @@ function LogPanel({ entries, open, setOpen, onClear }) {
                 onClear();
               }}
             >
-              清空
+              {t('clear')}
             </button>
             <button className="log-toggle" onClick={handleCopy}>
-              {copyLabel}
+              {copied ? t('copied') : t('copy')}
             </button>
           </>
         )}
-        <button className="log-toggle">{open ? "收起" : "展开"}</button>
+        <button className="log-toggle">{open ? t('collapse') : t('expand')}</button>
       </div>
       {open && (
         <div className="log-body">
@@ -297,7 +331,7 @@ function LogPanel({ entries, open, setOpen, onClear }) {
 }
 
 // ── SettingsModal Component ──
-function SettingsModal({ open, settings, onClose, onSave }) {
+function SettingsModal({ open, settings, onClose, onSave, t }) {
   const [draft, setDraft] = useState(settings);
   const [selecting, setSelecting] = useState(false);
   useEffect(() => {
@@ -312,7 +346,7 @@ function SettingsModal({ open, settings, onClose, onSave }) {
         setDraft({ ...draft, base_dir: selected });
       }
     } catch (e) {
-      console.error("选择目录失败:", e);
+      console.error(t('selectDirFailed'), e);
     } finally {
       setSelecting(false);
     }
@@ -324,31 +358,31 @@ function SettingsModal({ open, settings, onClose, onSave }) {
     <div className="modal" onClick={onClose}>
       <div className="modal-backdrop" />
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-        <h2>设置</h2>
+        <h2>{t('settingsTitle')}</h2>
         <div className="form-group">
-          <label>工作区目录</label>
+          <label>{t('workspaceDir')}</label>
           <div className="input-with-button">
             <input
               type="text"
               value={draft?.base_dir || ""}
               onChange={(e) => setDraft({ ...draft, base_dir: e.target.value })}
-              placeholder="/home/xxx/智能体/webcode"
+              placeholder={t('selectDirPlaceholder')}
             />
             <button
               className="btn btn-secondary"
               onClick={handleSelectDirectory}
               disabled={selecting}
             >
-              {selecting ? "选择中..." : "选择目录"}
+              {selecting ? t('selecting') : t('selectDirBtn')}
             </button>
           </div>
         </div>
         <div className="modal-actions">
           <button className="btn btn-ghost" onClick={onClose}>
-            取消
+            {t('cancel')}
           </button>
           <button className="btn btn-primary" onClick={() => onSave(draft)}>
-            保存并重新扫描
+            {t('saveAndRescan')}
           </button>
         </div>
       </div>
@@ -357,17 +391,17 @@ function SettingsModal({ open, settings, onClose, onSave }) {
 }
 
 // ── TweaksPanel Component ──
-function TweaksPanel({ tweaks, setTweak }) {
+function TweaksPanel({ tweaks, setTweak, t }) {
   return (
     <div className="tweaks-panel">
       <div className="tweaks-hd" onClick={() => setTweak("showTweaks", !tweaks.showTweaks)}>
-        <span>⚙ 外观设置</span>
-        <button className="tweaks-toggle">{tweaks.showTweaks ? "收起" : "展开"}</button>
+        <span>⚙ {t('appearance')}</span>
+        <button className="tweaks-toggle">{tweaks.showTweaks ? t('collapse') : t('expand')}</button>
       </div>
       {tweaks.showTweaks && (
         <div className="tweaks-body">
           <div className="tweak-section">
-            <label>密度</label>
+            <label>{t('density')}</label>
             <div className="tweak-radio">
               {["compact", "regular", "comfy"].map((v) => (
                 <button
@@ -375,30 +409,30 @@ function TweaksPanel({ tweaks, setTweak }) {
                   className={`tweak-opt ${tweaks.density === v ? "on" : ""}`}
                   onClick={() => setTweak("density", v)}
                 >
-                  {v === "compact" ? "紧凑" : v === "regular" ? "标准" : "宽松"}
+                  {v === "compact" ? t('densityCompact') : v === "regular" ? t('densityRegular') : t('densityComfy')}
                 </button>
               ))}
             </div>
           </div>
           <div className="tweak-section">
-            <label>视图</label>
+            <label>{t('view')}</label>
             <div className="tweak-radio">
               <button
                 className={`tweak-opt ${tweaks.view === "grid" ? "on" : ""}`}
                 onClick={() => setTweak("view", "grid")}
               >
-                {Icons.grid} 网格
+                {Icons.grid} {t('viewGrid')}
               </button>
               <button
                 className={`tweak-opt ${tweaks.view === "list" ? "on" : ""}`}
                 onClick={() => setTweak("view", "list")}
               >
-                {Icons.list} 列表
+                {Icons.list} {t('viewList')}
               </button>
             </div>
           </div>
           <div className="tweak-section">
-            <label>主题色</label>
+            <label>{t('accentColor')}</label>
             <div className="tweak-colors">
               {["#D97757", "#3B82F6", "#10B981", "#7C3AED", "#0F172A"].map((c) => (
                 <button
@@ -428,6 +462,7 @@ const TWEAK_DEFAULTS = {
 
 function App() {
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const { lang, t, toggleLang } = useI18n();
   const [projects, setProjects] = useState([]);
   const [settings, setSettings] = useState({ base_dir: "" });
   const [scanning, setScanning] = useState(false);
@@ -463,8 +498,8 @@ function App() {
 
   // Push log entry
   const pushLog = React.useCallback((level, msg) => {
-    const t = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-    setLogEntries((prev) => [...prev.slice(-199), { t, level, msg }]);
+    const timeStr = new Date().toLocaleTimeString("en-CA", { hour12: false });
+    setLogEntries((prev) => [...prev.slice(-199), { t: timeStr, level, msg }]);
   }, []);
 
   // Load settings on mount
@@ -477,24 +512,24 @@ function App() {
           doScan(s);
         }
       })
-      .catch((e) => pushLog("error", `加载设置失败: ${e}`));
-  }, [pushLog]);
+      .catch((e) => pushLog("error", `${t('logFailedToLoad')}: ${e}`));
+  }, [pushLog, t]);
 
   // Scan projects
   const doScan = async (s = settingsRef.current) => {
     if (!s.base_dir) {
-      pushLog("warn", "请先设置工作区目录");
+      pushLog("warn", t('pleaseSetWorkspaceDir'));
       return;
     }
 
     setScanning(true);
-    pushLog("info", `开始扫描 ${shortPath(s.base_dir)}`);
+    pushLog("info", t('scanProjectsAt', shortPath(s.base_dir)));
     try {
       const list = await Bridge.scanProjects(s.base_dir);
       setProjects(list);
-      pushLog("ok", `扫描完成，找到 ${list.length} 个 Tauri 项目`);
+      pushLog("ok", t('scanCompleteFound', list.length));
     } catch (e) {
-      pushLog("error", `扫描失败: ${e}`);
+      pushLog("error", `${t('scanFailedMsg')}: ${e}`);
     } finally {
       setScanning(false);
     }
@@ -505,22 +540,22 @@ function App() {
     try {
       const selected = await Bridge.openFile();
       if (!selected) {
-        pushLog("info", "未选择图标文件");
+        pushLog("info", t('noFileSelected'));
         return;
       }
 
       setLoadingPaths((prev) => ({ ...prev, [project.path]: true }));
-      pushLog("info", `[${project.name}] 正在替换图标...`);
+      pushLog("info", `[${project.name}] ${t('replacingIconFor')}...`);
 
       const result = await Bridge.replaceIcon(project.path, project.tauriDir, selected);
       if (result.success) {
-        pushLog("ok", `[${project.name}] 图标替换成功`);
+        pushLog("ok", `[${project.name}] ${t('iconReplaceOk')}`);
         await doScan(); // Refresh to show new icon
       } else {
-        pushLog("error", `[${project.name}] 图标替换失败: ${result.output}`);
+        pushLog("error", `[${project.name}] ${t('iconReplaceFailedFor')}: ${result.output}`);
       }
     } catch (e) {
-      pushLog("error", `[${project.name}] 替换图标出错: ${e}`);
+      pushLog("error", `[${project.name}] ${t('iconReplaceFailedFor')}: ${e}`);
     } finally {
       setLoadingPaths((prev) => {
         const next = { ...prev };
@@ -532,22 +567,22 @@ function App() {
 
   // Cargo clean
   const cargoClean = async (project) => {
-    if (!confirm(`确定要清理 ${project.name} 的编译缓存吗？\n\n这将删除 target 目录。`)) {
+    if (!confirm(t('confirmCleanCache', project.name))) {
       return;
     }
 
     setLoadingPaths((prev) => ({ ...prev, [project.path]: true }));
-    pushLog("info", `[${project.name}] 正在清理缓存...`);
+    pushLog("info", `[${project.name}] ${t('cleaningCacheFor')}...`);
 
     try {
       const result = await Bridge.cargoClean(project.path, project.tauriDir);
       if (result.success) {
-        pushLog("ok", `[${project.name}] 缓存清理成功`);
+        pushLog("ok", `[${project.name}] ${t('cacheCleanOk')}`);
       } else {
-        pushLog("error", `[${project.name}] 缓存清理失败: ${result.output}`);
+        pushLog("error", `[${project.name}] ${t('cleanCacheFailedFor')}: ${result.output}`);
       }
     } catch (e) {
-      pushLog("error", `[${project.name}] 清理缓存出错: ${e}`);
+      pushLog("error", `[${project.name}] ${t('cleanCacheFailedFor')}: ${e}`);
     } finally {
       setLoadingPaths((prev) => {
         const next = { ...prev };
@@ -559,24 +594,24 @@ function App() {
 
   // Build project
   const buildProject = async (project) => {
-    if (!confirm(`确定要构建 ${project.name} 吗？\n\n可能需要 5-15 分钟。`)) {
+    if (!confirm(t('confirmBuild', project.name))) {
       return;
     }
 
     setLoadingPaths((prev) => ({ ...prev, [project.path]: true }));
-    pushLog("info", `[${project.name}] 开始构建...`);
+    pushLog("info", `[${project.name}] ${t('buildInProgress')}...`);
 
     const unlisten = Bridge.listenBuildOutput((msg) => pushLog("info", `[${project.name}] ${msg}`));
 
     try {
       const result = await Bridge.buildProject(project.path);
       if (result.success) {
-        pushLog("ok", `[${project.name}] 构建完成`);
+        pushLog("ok", `[${project.name}] ${t('buildOk')}`);
       } else {
-        pushLog("error", `[${project.name}] 构建失败: ${result.output}`);
+        pushLog("error", `[${project.name}] ${t('buildFailedFor')}: ${result.output}`);
       }
     } catch (e) {
-      pushLog("error", `[${project.name}] 构建出错: ${e}`);
+      pushLog("error", `[${project.name}] ${t('buildFailedFor')}: ${e}`);
     } finally {
       unlisten();
       setLoadingPaths((prev) => {
@@ -590,20 +625,20 @@ function App() {
   // Debug project
   const debugProject = async (project) => {
     setLoadingPaths((prev) => ({ ...prev, [project.path]: true }));
-    pushLog("info", `[${project.name}] 启动调试模式...`);
+    pushLog("info", `[${project.name}] ${t('debugModeStarted')}...`);
 
     const unlisten = Bridge.listenBuildOutput((msg) => pushLog("info", `[${project.name}] ${msg}`));
 
     try {
       const result = await Bridge.debugProject(project.path);
       if (result.success) {
-        pushLog("ok", `[${project.name}] 调试模式已启动`);
+        pushLog("ok", `[${project.name}] ${t('debugOk')}`);
       } else {
-        pushLog("error", `[${project.name}] 启动调试失败: ${result.output}`);
+        pushLog("error", `[${project.name}] ${t('debugFailedFor')}: ${result.output}`);
         unlisten();
       }
     } catch (e) {
-      pushLog("error", `[${project.name}] 启动调试出错: ${e}`);
+      pushLog("error", `[${project.name}] ${t('debugFailedFor')}: ${e}`);
       unlisten();
     } finally {
       setLoadingPaths((prev) => {
@@ -621,10 +656,10 @@ function App() {
       setSettings(next);
       settingsRef.current = next;
       setSettingsOpen(false);
-      pushLog("ok", "设置已保存");
+      pushLog("ok", t('settingsSaved'));
       await doScan(next);
     } catch (e) {
-      pushLog("error", `保存设置失败: ${e}`);
+      pushLog("error", `${t('saveSettingsFailed')}: ${e}`);
     }
   };
 
@@ -642,17 +677,20 @@ function App() {
         onSettings={() => setSettingsOpen(true)}
         onCycleColorMode={cycleColorMode}
         colorMode={tweaks.colorMode}
+        t={t}
+        lang={lang}
+        onToggleLang={toggleLang}
       />
 
-      {tweaks.showTweaks && <TweaksPanel tweaks={tweaks} setTweak={setTweak} />}
+      {tweaks.showTweaks && <TweaksPanel tweaks={tweaks} setTweak={setTweak} t={t} />}
 
       <main className="main">
         {projects.length === 0 ? (
           <div className="empty">
             <div className="empty-ico">{Icons.scan}</div>
-            <div className="empty-t">{scanning ? "正在扫描..." : "没有找到 Tauri 项目"}</div>
+            <div className="empty-t">{scanning ? t('scanningDir') : t('noProjects')}</div>
             <div className="empty-s">
-              {settings.base_dir ? "检查工作区目录中是否包含 Tauri 项目" : "请先在设置中选择工作区目录"}
+              {settings.base_dir ? t('noProjectsHint') : t('noProjectsHintNoDir')}
             </div>
           </div>
         ) : (
@@ -666,6 +704,7 @@ function App() {
                 onCargoClean={cargoClean}
                 onBuild={buildProject}
                 onDebug={debugProject}
+                t={t}
               />
             ))}
           </div>
@@ -678,6 +717,7 @@ function App() {
           open={logOpen}
           setOpen={setLogOpen}
           onClear={() => setLogEntries([])}
+          t={t}
         />
       )}
 
@@ -686,6 +726,7 @@ function App() {
         settings={settings}
         onClose={() => setSettingsOpen(false)}
         onSave={saveSettings}
+        t={t}
       />
     </div>
   );
