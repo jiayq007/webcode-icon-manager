@@ -466,6 +466,11 @@ fi
     // 写临时脚本文件，避免 osascript 字符串里的引号冲突
     // -il: interactive + login，确保 .zshrc/.bash_profile 加载，cargo/nvm 都在 PATH
     let tmp = format!("/tmp/webcode-debug-{}.sh", std::process::id());
+    // 唯一窗口标签，用于脚本结束后精准关闭该 Terminal 窗口
+    let win_tag = format!("webcode-debug-{}", std::process::id());
+    let close_line = format!(
+        r#"osascript -e 'tell application "Terminal" to close (every window whose custom title is "{win_tag}")' 2>/dev/null"#
+    );
     let script = format!(
         "#!{shell} -il\n\
 export PATH=\"$HOME/.cargo/bin:$PATH\"\n\
@@ -477,13 +482,21 @@ _EXIT=$?\n\
 if [ $_EXIT -ne 0 ] && [ $_EXIT -ne 130 ]; then\n\
   echo \"=== 异常退出 ($_EXIT)，按 Enter 关闭 ===\"\n\
   read -r\n\
-fi\n"
+fi\n\
+{close_line}\n"
     );
     fs::write(&tmp, script).map_err(|e| format!("写临时脚本失败: {}", e))?;
     Command::new("chmod").args(["+x", &tmp]).output().ok();
 
-    let apple_script =
-        format!("tell application \"Terminal\"\ndo script \"{tmp}\"\nactivate\nend tell");
+    // 启动后给窗口贴上唯一标签，脚本结束时据此关闭
+    let apple_script = format!(
+        "tell application \"Terminal\"\n\
+do script \"{tmp}\"\n\
+delay 0.3\n\
+set custom title of front window to \"{win_tag}\"\n\
+activate\n\
+end tell"
+    );
     Command::new("osascript")
         .args(["-e", &apple_script])
         .spawn()
