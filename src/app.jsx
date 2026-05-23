@@ -682,7 +682,7 @@ function App() {
         onToggleLang={toggleLang}
       />
 
-      {tweaks.showTweaks && <TweaksPanel tweaks={tweaks} setTweak={setTweak} t={t} />}
+      <TweaksPanel tweaks={tweaks} setTweak={setTweak} t={t} />
 
       <main className="main">
         {projects.length === 0 ? (

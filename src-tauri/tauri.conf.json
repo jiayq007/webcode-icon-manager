@@ -24,7 +24,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app"],
     "category": "DeveloperTool",
     "shortDescription": "WebClaw Tauri 图标管理工具",
     "longDescription": "扫描 webcode 目录下的 Tauri 项目，管理项目图标，一键替换图标并清理编译缓存。",

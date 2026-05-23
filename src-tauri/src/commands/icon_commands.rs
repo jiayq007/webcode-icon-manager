@@ -466,9 +466,20 @@ fi
     // 写临时脚本文件，避免 osascript 字符串里的引号冲突
     // -il: interactive + login，确保 .zshrc/.bash_profile 加载，cargo/nvm 都在 PATH
     let tmp = format!("/tmp/webcode-debug-{}.sh", std::process::id());
-    fs::write(&tmp, format!(
-        "#!{shell} -il\nexport PATH=\"$HOME/.cargo/bin:$PATH\"\ncd '{project_path}' || {{ echo \"cd 失败: {project_path}\"; exec {shell}; }}\n{preflight}echo \"=== 执行: {full_cmd} ===\"\n{full_cmd}\necho \"=== 退出码: $? ===\"\nexec {shell}\n"
-    )).map_err(|e| format!("写临时脚本失败: {}", e))?;
+    let script = format!(
+        "#!{shell} -il\n\
+export PATH=\"$HOME/.cargo/bin:$PATH\"\n\
+cd '{project_path}' || {{ echo \"cd 失败: {project_path}\"; read -r; exit 1; }}\n\
+{preflight}\
+echo \"=== 执行: {full_cmd} ===\"\n\
+{full_cmd}\n\
+_EXIT=$?\n\
+if [ $_EXIT -ne 0 ] && [ $_EXIT -ne 130 ]; then\n\
+  echo \"=== 异常退出 ($_EXIT)，按 Enter 关闭 ===\"\n\
+  read -r\n\
+fi\n"
+    );
+    fs::write(&tmp, script).map_err(|e| format!("写临时脚本失败: {}", e))?;
     Command::new("chmod").args(["+x", &tmp]).output().ok();
 
     let apple_script =
@@ -529,10 +540,19 @@ fn resolve_build_command(project_dir: &Path) -> String {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(scripts) = json["scripts"].as_object() {
                 if scripts.contains_key("tauri:build") {
-                    return "npm run tauri:build".to_string();
+                    // On macOS, skip DMG bundling (requires create-dmg)
+                    return if cfg!(target_os = "macos") {
+                        "npm run tauri:build -- --bundles app".to_string()
+                    } else {
+                        "npm run tauri:build".to_string()
+                    };
                 }
                 if scripts.contains_key("tauri") {
-                    return "npm run tauri -- build".to_string();
+                    return if cfg!(target_os = "macos") {
+                        "npm run tauri -- build --bundles app".to_string()
+                    } else {
+                        "npm run tauri -- build".to_string()
+                    };
                 }
                 if scripts.contains_key("build") {
                     return "npm run build".to_string();
@@ -540,7 +560,11 @@ fn resolve_build_command(project_dir: &Path) -> String {
             }
         }
     }
-    "npx tauri build".to_string()
+    if cfg!(target_os = "macos") {
+        "npx tauri build --bundles app".to_string()
+    } else {
+        "npx tauri build".to_string()
+    }
 }
 
 fn read_product_name(project_dir: &Path) -> Option<String> {
