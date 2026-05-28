@@ -144,9 +144,12 @@
     // Event listeners for build output streaming
     listenBuildOutput: (callback) => {
       if (!window.__TAURI__?.event) {
-        return () => {}; // No-op in browser mode
+        return () => {};
       }
-      return window.__TAURI__.event.listen("build_output", (e) => callback(e.payload));
+      let unlistenFn = null;
+      window.__TAURI__.event.listen("build_output", (e) => callback(e.payload))
+        .then((fn) => { unlistenFn = fn; });
+      return () => { if (unlistenFn) unlistenFn(); };
     },
   };
 

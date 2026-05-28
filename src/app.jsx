@@ -619,9 +619,6 @@ function App() {
       const result = await Bridge.buildProject(project.path);
       if (result.success) {
         pushLog("ok", `[${project.name}] ${t('buildOk')}`);
-        setProjects((prev) =>
-          prev.map((p) => p.path === project.path ? { ...p, hasTarget: true } : p)
-        );
       } else {
         pushLog("error", `[${project.name}] ${t('buildFailedFor')}: ${result.output}`);
       }
@@ -629,6 +626,9 @@ function App() {
       pushLog("error", `[${project.name}] ${t('buildFailedFor')}: ${e}`);
     } finally {
       unlisten();
+      setProjects((prev) =>
+        prev.map((p) => p.path === project.path ? { ...p, hasTarget: true } : p)
+      );
       setLoadingPaths((prev) => {
         const next = { ...prev };
         delete next[project.path];
@@ -648,17 +648,16 @@ function App() {
       const result = await Bridge.debugProject(project.path);
       if (result.success) {
         pushLog("ok", `[${project.name}] ${t('debugOk')}`);
-        setProjects((prev) =>
-          prev.map((p) => p.path === project.path ? { ...p, hasTarget: true } : p)
-        );
       } else {
         pushLog("error", `[${project.name}] ${t('debugFailedFor')}: ${result.output}`);
-        unlisten();
       }
     } catch (e) {
       pushLog("error", `[${project.name}] ${t('debugFailedFor')}: ${e}`);
-      unlisten();
     } finally {
+      unlisten();
+      setProjects((prev) =>
+        prev.map((p) => p.path === project.path ? { ...p, hasTarget: true } : p)
+      );
       setLoadingPaths((prev) => {
         const next = { ...prev };
         delete next[project.path];
