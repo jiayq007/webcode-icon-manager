@@ -212,6 +212,15 @@ function ProjectCard({ project, loading, onReplaceIcon, onCargoClean, onBuild, o
             </span>
           ))}
         </div>
+        <div className="detail-row" style={{ marginTop: '6px' }}>
+          <span
+            className="target-status-badge"
+            style={{ color: project.hasTarget ? 'var(--accent)' : 'var(--fg-muted, #888)' }}
+          >
+            {project.hasTarget ? '● ' : '○ '}
+            {project.hasTarget ? t('targetExists') : t('targetNotExists')}
+          </span>
+        </div>
       </div>
 
       <div className="card-actions">
@@ -225,7 +234,7 @@ function ProjectCard({ project, loading, onReplaceIcon, onCargoClean, onBuild, o
         <button
           className="btn-action"
           onClick={() => onCargoClean(project)}
-          disabled={loading}
+          disabled={loading || !project.hasTarget}
         >
           🧹 {t('cleanCache')}
         </button>
@@ -578,6 +587,9 @@ function App() {
       const result = await Bridge.cargoClean(project.path, project.tauriDir);
       if (result.success) {
         pushLog("ok", `[${project.name}] ${t('cacheCleanOk')}`);
+        setProjects((prev) =>
+          prev.map((p) => p.path === project.path ? { ...p, hasTarget: false } : p)
+        );
       } else {
         pushLog("error", `[${project.name}] ${t('cleanCacheFailedFor')}: ${result.output}`);
       }

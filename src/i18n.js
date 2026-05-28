@@ -142,6 +142,9 @@
     debugOk: "调试模式已启动",
     selectDirPlaceholder: "/home/xxx/智能体/webcode",
     pageTitle: "Tauri 图标管理器",
+
+    targetExists: "target 存在",
+    targetNotExists: "无 target",
   },
 
   en: {
@@ -287,6 +290,9 @@
     debugOk: "Debug mode started",
     selectDirPlaceholder: "/home/xxx/workspace/webcode",
     pageTitle: "Tauri Icon Manager",
+
+    targetExists: "target exists",
+    targetNotExists: "no target",
   },
 });
 

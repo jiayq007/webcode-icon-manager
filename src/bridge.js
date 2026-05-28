@@ -61,6 +61,7 @@
           output: "Browser preview mode: debug simulated",
         });
       }
+
       return Promise.resolve({
         success: false,
         output: "Browser preview mode: command not available",
@@ -81,6 +82,7 @@
       description: p.description || "",
       version: p.version || "",
       iconFiles: p.icon_files || [],
+      hasTarget: p.has_target ?? false,
     };
   }
 

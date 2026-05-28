@@ -18,6 +18,7 @@ pub struct TauriProject {
     pub description: String,
     pub version: String,
     pub icon_files: Vec<String>,
+    pub has_target: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -193,6 +194,7 @@ pub async fn icon_scan_projects(base_dir: String) -> Result<Vec<TauriProject>, S
 
         let icon_data_url = icon_to_data_url(&icon_path);
         let icon_files = get_icon_files(&icons_dir);
+        let has_target = tauri_dir.join("target").exists();
 
         projects.push(TauriProject {
             name,
@@ -203,6 +205,7 @@ pub async fn icon_scan_projects(base_dir: String) -> Result<Vec<TauriProject>, S
             description,
             version,
             icon_files,
+            has_target,
         });
     }
 
