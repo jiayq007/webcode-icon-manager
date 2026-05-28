@@ -236,10 +236,16 @@ pub async fn icon_replace_icon(
     let project_root = Path::new(&project_path);
 
     // 优先使用项目本地的 CLI；若无则降级到 cargo tauri icon
+    // 通过 shell + with_nvm 确保 node 在 PATH 中（Tauri 进程不继承 shell PATH）
     let local_bin = project_root.join("node_modules/.bin/tauri");
+    let shell = user_shell();
     let output = if local_bin.exists() {
-        Command::new(&local_bin)
-            .args(["icon", &icon_path])
+        let cmd = with_nvm(&format!(
+            "node_modules/.bin/tauri icon '{}'",
+            icon_path.replace('\'', "'\\''")
+        ));
+        Command::new(&shell)
+            .args(["-c", &cmd])
             .current_dir(project_root)
             .output()
             .map_err(|e| format!("执行命令失败: {}", e))?
