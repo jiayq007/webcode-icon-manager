@@ -254,10 +254,7 @@ pub async fn icon_replace_icon(
             .map_err(|e| format!("执行命令失败: {}", e))?
     } else {
         // ai-kanban 等使用 cargo tauri，从 src-tauri 目录运行
-        Command::new("cargo")
-            .args(["tauri", "icon", &icon_path])
-            .current_dir(tauri_path)
-            .output()
+        run_cargo(&["tauri", "icon", &icon_path], tauri_path)
             .map_err(|e| format!("执行命令失败: {}", e))?
     };
 
@@ -425,6 +422,19 @@ pub async fn icon_debug_project(
 
 fn user_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
+}
+
+// Run `cargo <args>` via shell with $HOME/.cargo/bin in PATH.
+// Direct Command::new("cargo") fails in installed app bundles because macOS
+// strips PATH to /usr/bin:/bin only — cargo lives in ~/.cargo/bin.
+fn run_cargo(args: &[&str], cwd: &std::path::Path) -> std::io::Result<std::process::Output> {
+    let shell = user_shell();
+    let cargo_args = args.join(" ");
+    let cmd = format!("export PATH=\"$HOME/.cargo/bin:$PATH\"; cargo {}", cargo_args);
+    Command::new(&shell)
+        .args(["-c", &cmd])
+        .current_dir(cwd)
+        .output()
 }
 
 fn with_nvm(cmd: &str) -> String {
@@ -663,10 +673,7 @@ pub async fn icon_cargo_clean(
         });
     }
 
-    let output = Command::new("cargo")
-        .arg("clean")
-        .current_dir(tauri_path)
-        .output()
+    let output = run_cargo(&["clean"], tauri_path)
         .map_err(|e| format!("执行命令失败: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
