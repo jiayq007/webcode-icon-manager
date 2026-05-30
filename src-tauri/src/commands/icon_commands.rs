@@ -484,9 +484,13 @@ fi
 
     // 写临时脚本文件，避免 osascript 字符串里的引号冲突
     // -il: interactive + login，确保 .zshrc/.bash_profile 加载，cargo/nvm 都在 PATH
-    let tmp = format!("/tmp/webcode-debug-{}.sh", std::process::id());
-    // 唯一窗口标签，用于脚本结束后精准关闭该 Terminal 窗口
-    let win_tag = format!("webcode-debug-{}", std::process::id());
+    let uid = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    let tmp = format!("/tmp/webcode-debug-{}-{}.sh", std::process::id(), uid);
+    // 唯一窗口标签（PID + 纳秒时间戳），脚本结束后只关闭本窗口
+    let win_tag = format!("webcode-debug-{}-{}", std::process::id(), uid);
     let close_line = format!(
         r#"osascript -e 'tell application "Terminal" to close (every window whose custom title is "{win_tag}")' 2>/dev/null"#
     );
